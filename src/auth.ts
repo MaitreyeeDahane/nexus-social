@@ -44,11 +44,30 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const dbUser = await prisma.user.findUnique({ where: { email: user.email }, select: { username: true, isBanned: true } })
         if (dbUser?.isBanned) return false
         if (!dbUser?.username) {
-          const base = user.email.split("@")[0].replace(/[^a-z0-9]/gi, "_").toLowerCase().slice(0, 15)
-          let username = base, i = 1
-          while (await prisma.user.findUnique({ where: { username } })) username = `${base}${i++}`
-          await prisma.user.update({ where: { email: user.email }, data: { username } })
-        }
+  const existingUser = await prisma.user.findUnique({
+    where: { email: user.email }
+  })
+
+  if (existingUser) {
+    const base = user.email
+      .split("@")[0]
+      .replace(/[^a-z0-9]/gi, "_")
+      .toLowerCase()
+      .slice(0, 15)
+
+    let username = base
+    let i = 1
+
+    while (await prisma.user.findUnique({ where: { username } })) {
+      username = `${base}${i++}`
+    }
+
+    await prisma.user.update({
+      where: { id: existingUser.id },
+      data: { username },
+    })
+  }
+}
       }
       return true
     },
