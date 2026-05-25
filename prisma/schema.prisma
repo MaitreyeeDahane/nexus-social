@@ -1,0 +1,592 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// AUTH MODELS (NextAuth v5 compatible)
+// ============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  username      String?   @unique
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  coverImage    String?
+  bio           String?
+  website       String?
+  location      String?
+  karma         Int       @default(0)
+  role          UserRole  @default(USER)
+  isVerified    Boolean   @default(false)
+  isBanned      Boolean   @default(false)
+  bannedAt      DateTime?
+  banReason     String?
+  passwordHash  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts      Account[]
+  sessions      Session[]
+  posts         Post[]
+  comments      Comment[]
+  votes         Vote[]
+  commentVotes  CommentVote[]
+  communities   CommunityMember[]
+  moderating    CommunityModerator[]
+  notifications Notification[]   @relation("NotificationRecipient")
+  sentNotifications Notification[] @relation("NotificationSender")
+  bookmarks     Bookmark[]
+  following     Follow[]         @relation("Following")
+  followers     Follow[]         @relation("Followers")
+  reports       Report[]         @relation("Reporter")
+  reportedPosts Report[]         @relation("ReportedUser")
+  achievements  UserAchievement[]
+  moderationLogs ModerationLog[] @relation("ModeratorLogs")
+  savedSearches SavedSearch[]
+  pollVotes     PollVote[]
+
+  @@index([username])
+  @@index([email])
+  @@index([karma])
+  @@index([createdAt])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================================
+// COMMUNITY MODELS
+// ============================================================
+
+model Community {
+  id          String          @id @default(cuid())
+  name        String          @unique
+  slug        String          @unique
+  description String?         @db.Text
+  longDescription String?     @db.Text
+  avatar      String?
+  banner      String?
+  isPrivate   Boolean         @default(false)
+  isRestricted Boolean        @default(false)
+  isNSFW      Boolean         @default(false)
+  rules       CommunityRule[]
+  creatorId   String
+  memberCount Int             @default(0)
+  postCount   Int             @default(0)
+  type        CommunityType   @default(PUBLIC)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+
+  posts       Post[]
+  members     CommunityMember[]
+  moderators  CommunityModerator[]
+  flairs      PostFlair[]
+  reports     Report[]
+  settings    CommunitySettings?
+  tags        CommunityTag[]
+
+  @@index([slug])
+  @@index([name])
+  @@index([memberCount])
+  @@index([createdAt])
+}
+
+model CommunitySettings {
+  id                    String    @id @default(cuid())
+  communityId           String    @unique
+  allowImagePosts       Boolean   @default(true)
+  allowLinkPosts        Boolean   @default(true)
+  allowPollPosts        Boolean   @default(true)
+  requireFlair          Boolean   @default(false)
+  approvalRequired      Boolean   @default(false)
+  allowCrossPosting     Boolean   @default(true)
+  minAccountAge         Int       @default(0)
+  minKarmaRequired      Int       @default(0)
+  spamFilter            Boolean   @default(true)
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+}
+
+model CommunityRule {
+  id          String    @id @default(cuid())
+  communityId String
+  title       String
+  description String?   @db.Text
+  order       Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@index([communityId])
+}
+
+model CommunityMember {
+  id          String    @id @default(cuid())
+  userId      String
+  communityId String
+  joinedAt    DateTime  @default(now())
+  isFavorite  Boolean   @default(false)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId])
+  @@index([userId])
+  @@index([communityId])
+}
+
+model CommunityModerator {
+  id          String    @id @default(cuid())
+  userId      String
+  communityId String
+  permissions String[]  @default([])
+  addedAt     DateTime  @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId])
+  @@index([userId])
+  @@index([communityId])
+}
+
+model PostFlair {
+  id          String  @id @default(cuid())
+  communityId String
+  name        String
+  color       String  @default("#6366f1")
+  textColor   String  @default("#ffffff")
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  posts     Post[]
+
+  @@index([communityId])
+}
+
+model CommunityTag {
+  id          String @id @default(cuid())
+  communityId String
+  name        String
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([communityId, name])
+}
+
+// ============================================================
+// POST MODELS
+// ============================================================
+
+model Post {
+  id          String      @id @default(cuid())
+  title       String
+  content     String?     @db.Text
+  url         String?
+  imageUrl    String?
+  imageUrls   String[]    @default([])
+  type        PostType    @default(TEXT)
+  authorId    String
+  communityId String
+  flairId     String?
+  score       Int         @default(0)
+  upvotes     Int         @default(0)
+  downvotes   Int         @default(0)
+  commentCount Int        @default(0)
+  viewCount   Int         @default(0)
+  isNSFW      Boolean     @default(false)
+  isSpoiler   Boolean     @default(false)
+  isPinned    Boolean     @default(false)
+  isLocked    Boolean     @default(false)
+  isApproved  Boolean     @default(true)
+  isDeleted   Boolean     @default(false)
+  isDraft     Boolean     @default(false)
+  scheduledAt DateTime?
+  tags        String[]    @default([])
+  linkMeta    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  community Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  flair     PostFlair?    @relation(fields: [flairId], references: [id])
+  comments  Comment[]
+  votes     Vote[]
+  bookmarks Bookmark[]
+  reports   Report[]
+  poll      Poll?
+
+  @@index([authorId])
+  @@index([communityId])
+  @@index([score])
+  @@index([createdAt])
+  @@index([isDeleted])
+  @@index([isDraft])
+  @@index([type])
+  
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  type      VoteType
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([userId])
+}
+
+// ============================================================
+// COMMENT MODELS
+// ============================================================
+
+model Comment {
+  id          String      @id @default(cuid())
+  content     String      @db.Text
+  authorId    String
+  postId      String
+  parentId    String?
+  score       Int         @default(0)
+  upvotes     Int         @default(0)
+  downvotes   Int         @default(0)
+  depth       Int         @default(0)
+  isDeleted   Boolean     @default(false)
+  isApproved  Boolean     @default(true)
+  isPinned    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  author   User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  post     Post          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  parent   Comment?      @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[]     @relation("CommentReplies")
+  votes    CommentVote[]
+  reports  Report[]
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@index([score])
+  @@index([createdAt])
+}
+
+model CommentVote {
+  id        String   @id @default(cuid())
+  userId    String
+  commentId String
+  type      VoteType
+  createdAt DateTime @default(now())
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, commentId])
+  @@index([commentId])
+}
+
+// ============================================================
+// POLL MODELS
+// ============================================================
+
+model Poll {
+  id          String       @id @default(cuid())
+  postId      String       @unique
+  question    String?
+  endsAt      DateTime?
+  totalVotes  Int          @default(0)
+  allowMultiple Boolean    @default(false)
+  createdAt   DateTime     @default(now())
+
+  post    Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  options PollOption[]
+}
+
+model PollOption {
+  id        String @id @default(cuid())
+  pollId    String
+  text      String
+  voteCount Int    @default(0)
+
+  poll  Poll       @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes PollVote[]
+
+  @@index([pollId])
+}
+
+model PollVote {
+  id           String   @id @default(cuid())
+  userId       String
+  pollOptionId String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pollOption PollOption @relation(fields: [pollOptionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pollOptionId])
+}
+
+// ============================================================
+// NOTIFICATION MODELS
+// ============================================================
+
+model Notification {
+  id          String           @id @default(cuid())
+  type        NotificationType
+  recipientId String
+  senderId    String?
+  postId      String?
+  commentId   String?
+  communityId String?
+  message     String
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  sender    User? @relation("NotificationSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// ============================================================
+// SOCIAL MODELS
+// ============================================================
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+// ============================================================
+// MODERATION MODELS
+// ============================================================
+
+model Report {
+  id          String       @id @default(cuid())
+  type        ReportType
+  reason      String
+  description String?      @db.Text
+  status      ReportStatus @default(PENDING)
+  reporterId  String
+  postId      String?
+  commentId   String?
+  communityId String?
+  reportedUserId String?
+  resolvedAt  DateTime?
+  resolvedById String?
+  createdAt   DateTime     @default(now())
+
+  reporter      User       @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser  User?      @relation("ReportedUser", fields: [reportedUserId], references: [id], onDelete: SetNull)
+  post          Post?      @relation(fields: [postId], references: [id], onDelete: Cascade)
+  comment       Comment?   @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  community     Community? @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([reporterId])
+  @@index([createdAt])
+}
+
+model ModerationLog {
+  id          String       @id @default(cuid())
+  action      ModAction
+  moderatorId String
+  targetId    String
+  targetType  String
+  reason      String?
+  communityId String?
+  createdAt   DateTime     @default(now())
+
+  moderator User @relation("ModeratorLogs", fields: [moderatorId], references: [id], onDelete: Cascade)
+
+  @@index([moderatorId])
+  @@index([communityId])
+  @@index([createdAt])
+}
+
+// ============================================================
+// ACHIEVEMENT MODELS
+// ============================================================
+
+model Achievement {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String
+  icon        String
+  type        String
+  threshold   Int     @default(0)
+  points      Int     @default(0)
+
+  users UserAchievement[]
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  earnedAt      DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+// ============================================================
+// SEARCH MODELS
+// ============================================================
+
+model SavedSearch {
+  id        String   @id @default(cuid())
+  userId    String
+  query     String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserRole {
+  USER
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum PostType {
+  TEXT
+  IMAGE
+  LINK
+  POLL
+  VIDEO
+}
+
+enum VoteType {
+  UP
+  DOWN
+}
+
+enum CommunityType {
+  PUBLIC
+  RESTRICTED
+  PRIVATE
+}
+
+enum NotificationType {
+  COMMENT
+  REPLY
+  VOTE
+  FOLLOW
+  MENTION
+  MOD_ACTION
+  COMMUNITY_UPDATE
+  ACHIEVEMENT
+  SYSTEM
+}
+
+enum ReportType {
+  POST
+  COMMENT
+  USER
+  COMMUNITY
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWING
+  RESOLVED
+  DISMISSED
+}
+
+enum ModAction {
+  REMOVE_POST
+  REMOVE_COMMENT
+  BAN_USER
+  UNBAN_USER
+  APPROVE_POST
+  LOCK_POST
+  PIN_POST
+  FLAIR_POST
+  MUTE_USER
+  WARN_USER
+}
